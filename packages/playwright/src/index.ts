@@ -147,6 +147,7 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
   actionTimeout: [0, { option: true, box: true }],
   testIdAttribute: ['data-testid', { option: true, box: true }],
   navigationTimeout: [0, { option: true, box: true }],
+  selfHealing: [undefined, { option: true, box: true }],
   baseURL: [async ({ }, use) => {
     await use(process.env.PLAYWRIGHT_TEST_BASE_URL);
   }, { option: true, box: true }],
@@ -229,9 +230,16 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
     });
   }, { box: true }],
 
-  _setupContextOptions: [async ({ playwright, _combinedContextOptions, actionTimeout, navigationTimeout, testIdAttribute }, use, testInfo) => {
+  _setupContextOptions: [async ({ playwright, _combinedContextOptions, actionTimeout, navigationTimeout, testIdAttribute, selfHealing }, use, testInfo) => {
     if (testIdAttribute)
       playwrightLibrary.selectors.setTestIdAttribute(testIdAttribute);
+    
+    // Configure self-healing if provided
+    if (selfHealing) {
+      const { configureSelfHealing } = require('../../../playwright-core/src/server/selfHealing/selfHealingWrapper');
+      configureSelfHealing(selfHealing);
+    }
+    
     testInfo.snapshotSuffix = process.platform;
     if (debugMode() === 'inspector')
       (testInfo as TestInfoImpl)._setDebugMode();

@@ -7490,6 +7490,67 @@ export interface PlaywrightTestOptions {
    *
    */
   testIdAttribute: string;
+  /**
+   * Configuration for Playwright's self-healing capability that automatically adapts test locators when UI changes occur.
+   * 
+   * **Usage**
+   * 
+   * ```js
+   * // playwright.config.ts
+   * import { defineConfig } from '@playwright/test';
+   * 
+   * export default defineConfig({
+   *   use: {
+   *     selfHealing: {
+   *       enabled: true,
+   *       mode: 'auto',
+   *       autoApplyThreshold: 90
+   *     }
+   *   }
+   * });
+   * ```
+   * 
+   */
+  selfHealing?: {
+    /**
+     * Whether self-healing is enabled. Defaults to `false`.
+     */
+    enabled?: boolean;
+    /**
+     * Self-healing mode: 
+     * - `'auto'`: Automatically apply healing when confidence is high
+     * - `'assisted'`: Require manual approval in debug mode  
+     * - `'suggestion-only'`: Only suggest fixes, never auto-apply
+     * 
+     * Defaults to `'suggestion-only'`.
+     */
+    mode?: 'auto' | 'assisted' | 'suggestion-only';
+    /**
+     * Confidence threshold (0-100) for auto-applying healed locators in `'auto'` mode. 
+     * Defaults to `90`.
+     */
+    autoApplyThreshold?: number;
+    /**
+     * Array of healing strategies to use. Defaults to `['semantic', 'text', 'structural', 'attribute']`.
+     */
+    strategies?: Array<'semantic' | 'text' | 'visual' | 'structural' | 'attribute'>;
+    /**
+     * File path to store healing suggestions. Defaults to `'.playwright/self-healing-suggestions.json'`.
+     */
+    storageFile?: string;
+    /**
+     * Whether to log healing actions to console. Defaults to `false`.
+     */
+    notifyOnHeal?: boolean;
+    /**
+     * Array of test name regex patterns to exclude from self-healing.
+     */
+    excludeTests?: RegExp[];
+    /**
+     * Whether to learn from manual locator selections to improve future healing. Defaults to `false`.
+     */
+    learnFromManualSelections?: boolean;
+  };
 }
 
 

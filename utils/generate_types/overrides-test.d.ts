@@ -293,6 +293,16 @@ export interface PlaywrightTestOptions {
   navigationTimeout: number;
   serviceWorkers: ServiceWorkerPolicy;
   testIdAttribute: string;
+  selfHealing?: {
+    enabled?: boolean;
+    mode?: 'auto' | 'assisted' | 'suggestion-only';
+    autoApplyThreshold?: number;
+    strategies?: Array<'semantic' | 'text' | 'visual' | 'structural' | 'attribute'>;
+    storageFile?: string;
+    notifyOnHeal?: boolean;
+    excludeTests?: RegExp[];
+    learnFromManualSelections?: boolean;
+  };
 }
 
 
