@@ -80,8 +80,8 @@ const DEFAULT_HEALING_CONFIG: HealingConfig = {
   fallbackOrder: ['role', 'text', 'testid', 'css', 'xpath', 'aria'],
   uniquenessThreshold: 1,
   stabilityChecks: 2,
-  debugMode: false,
-  logLevel: 'basic',
+  debugMode: !!process.env.PW_HEALING_DEBUG,
+  logLevel: process.env.PW_HEALING_DEBUG ? 'verbose' : 'basic',
   screenshotOnHealing: true
 };
 

@@ -24,6 +24,7 @@ import type { SerializedCompilationCache  } from '../transform/compilationCache'
 
 export type ConfigCLIOverrides = {
   debug?: boolean;
+  debugHealing?: boolean;
   failOnFlakyTests?: boolean;
   forbidOnly?: boolean;
   fullyParallel?: boolean;
@@ -40,6 +41,8 @@ export type ConfigCLIOverrides = {
   timeout?: number;
   tsconfig?: string;
   ignoreSnapshots?: boolean;
+  uiHealing?: boolean;
+  updateSelectors?: boolean;
   updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
   updateSourceMethod?: 'overwrite' | 'patch' | '3way';
   workers?: number | string;
