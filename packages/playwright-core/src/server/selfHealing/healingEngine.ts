@@ -20,6 +20,7 @@ import { SemanticStrategy } from './strategies/semanticStrategy';
 import { TextStrategy } from './strategies/textStrategy';
 import { StructuralStrategy } from './strategies/structuralStrategy';
 import { AttributeStrategy } from './strategies/attributeStrategy';
+import { VisualStrategy } from './strategies/visualStrategy';
 import { ScoringAlgorithm } from './scoringAlgorithm';
 import { SuggestionStore } from './suggestionStore';
 
@@ -82,7 +83,7 @@ export class HealingEngine {
       enabled: false,
       mode: 'suggestion-only',
       autoApplyThreshold: 90,
-      strategies: ['semantic', 'text', 'structural', 'attribute'],
+      strategies: ['semantic', 'text', 'visual', 'structural', 'attribute'],
       storageFile: '.playwright/self-healing-suggestions.json',
       notifyOnHeal: false,
       excludeTests: [],
@@ -105,6 +106,9 @@ export class HealingEngine {
           break;
         case 'text':
           strategies.push(new TextStrategy());
+          break;
+        case 'visual':
+          strategies.push(new VisualStrategy());
           break;
         case 'structural':
           strategies.push(new StructuralStrategy());
