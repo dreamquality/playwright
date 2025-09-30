@@ -60,6 +60,7 @@ export interface HealingResult {
   success: boolean;
   appliedLocator?: string;
   score?: number;
+  strategy?: string;
   reason?: string;
   candidates?: ScoredCandidate[];
   applied?: boolean;
@@ -188,13 +189,36 @@ export class HealingEngine {
   private async captureSnapshot(page: Page): Promise<any> {
     // Capture DOM snapshot for analysis
     try {
+      // Capture screenshot for better context
+      let screenshot: string | undefined;
+      try {
+        // Create a simple progress controller for screenshot
+        const progress = {
+          log: () => {},
+          cleanupWhenAborted: () => {},
+          throwIfAborted: () => {}
+        } as any;
+        
+        const screenshotBuffer = await page.screenshot(progress, {});
+        screenshot = screenshotBuffer.toString('base64');
+      } catch (screenshotError) {
+        // Screenshot capture failed, continue without it
+        console.warn('[Self-Healing] Screenshot capture failed:', screenshotError.message);
+      }
+
       return {
         url: page.mainFrame().url(),
         title: await page.mainFrame().title(),
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        screenshot
       };
     } catch (error) {
-      return null;
+      return {
+        url: 'unknown',
+        title: 'unknown',
+        timestamp: Date.now(),
+        screenshot: undefined
+      };
     }
   }
 

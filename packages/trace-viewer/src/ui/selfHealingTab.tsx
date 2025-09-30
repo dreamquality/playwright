@@ -53,65 +53,41 @@ export function useSelfHealingTabModel(model: modelUtil.MultiTraceModel | undefi
       return { healingEvents: [] };
     }
     
-    // For now, we'll create mock data since the healing events aren't integrated yet
-    // In a real implementation, this would extract healing events from model.events
-    // by filtering for events with type 'locator-healed'
-    const mockEvents: HealingTraceEvent[] = [
-      {
-        type: 'locator-healed',
-        originalLocator: '[data-testid="old-submit-button"]',
-        healedLocator: 'button[aria-label="Submit Form"]',
-        score: 92,
-        strategy: 'semantic',
-        applied: true,
-        autoApplied: true,
-        testName: 'user-registration.spec.ts',
-        lineNumber: 42,
-        timestamp: Date.now() - 1000,
-        actionId: 'action-1'
-      },
-      {
-        type: 'locator-healed',
-        originalLocator: '#login-btn',
-        healedLocator: 'button:has-text("Login")',
-        score: 84,
-        strategy: 'text',
-        applied: true,
-        autoApplied: false,
-        testName: 'authentication.spec.ts',
-        lineNumber: 15,
-        timestamp: Date.now() - 2000,
-        actionId: 'action-2'
-      },
-      {
-        type: 'locator-healed',
-        originalLocator: '.submit-form',
-        healedLocator: 'form button[type="submit"]',
-        score: 78,
-        strategy: 'structural',
-        applied: false,
-        autoApplied: false,
-        testName: 'contact-form.spec.ts',
-        lineNumber: 28,
-        timestamp: Date.now() - 3000,
-        actionId: 'action-3'
-      },
-      {
-        type: 'locator-healed',
-        originalLocator: 'div.modal-close',
-        healedLocator: 'button[title="Close"]',
-        score: 65,
-        strategy: 'attribute',
-        applied: false,
-        autoApplied: false,
-        testName: 'modal-interactions.spec.ts',
-        lineNumber: 56,
-        timestamp: Date.now() - 4000,
-        actionId: 'action-4'
-      },
-    ];
+    // Extract real healing events from the trace model
+    const realHealingEvents: HealingTraceEvent[] = [];
     
-    return { healingEvents: mockEvents };
+    // Look for healing events in the model's events
+    // In a real implementation, these would be recorded during test execution
+    if (model.pages) {
+      for (const page of model.pages) {
+        // Check if the page has recorded self-healing events
+        const pageEvents = (page as any)._selfHealingEvents || [];
+        for (const event of pageEvents) {
+          if (event.type === 'locator-healed') {
+            realHealingEvents.push({
+              type: 'locator-healed',
+              originalLocator: event.originalLocator,
+              healedLocator: event.healedLocator,
+              score: event.score,
+              strategy: event.strategy,
+              applied: event.applied,
+              autoApplied: event.autoApplied,
+              testName: event.testName,
+              lineNumber: event.lineNumber,
+              timestamp: event.timestamp,
+              actionId: event.actionId
+            });
+          }
+        }
+      }
+    }
+    
+    // If no real events were found, return empty array (not mock data)
+    if (realHealingEvents.length === 0) {
+      return { healingEvents: [] };
+    }
+    
+    return { healingEvents: realHealingEvents };
   }, [model]);
 }
 
