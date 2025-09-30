@@ -284,6 +284,7 @@ async function mergeReports(reportDir: string | undefined, opts: { [key: string]
 
 function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrides {
   const overrides: ConfigCLIOverrides = {
+    debugHealing: options.debugHealing ? true : undefined,
     failOnFlakyTests: options.failOnFlakyTests ? true : undefined,
     forbidOnly: options.forbidOnly ? true : undefined,
     fullyParallel: options.fullyParallel ? true : undefined,
@@ -298,6 +299,8 @@ function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrid
     timeout: options.timeout ? parseInt(options.timeout, 10) : undefined,
     tsconfig: options.tsconfig ? path.resolve(process.cwd(), options.tsconfig) : undefined,
     ignoreSnapshots: options.ignoreSnapshots ? !!options.ignoreSnapshots : undefined,
+    uiHealing: options.uiHealing ? true : undefined,
+    updateSelectors: options.updateSelectors ? true : undefined,
     updateSnapshots: options.updateSnapshots,
     updateSourceMethod: options.updateSourceMethod,
     workers: options.workers,
@@ -321,6 +324,18 @@ function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrid
   if (!options.ui && options.debug) {
     overrides.debug = true;
     process.env.PWDEBUG = '1';
+  }
+  // Enable healing debug mode if requested
+  if (options.debugHealing) {
+    process.env.PW_HEALING_DEBUG = '1';
+  }
+  // Enable healing UI mode if requested
+  if (options.uiHealing) {
+    process.env.PW_HEALING_UI = '1';
+  }
+  // Enable automatic selector updates if requested
+  if (options.updateSelectors) {
+    process.env.PW_UPDATE_SELECTORS = '1';
   }
   if (!options.ui && options.trace) {
     overrides.use = overrides.use || {};
@@ -383,6 +398,7 @@ const testOptions: [string, { description: string, choices?: string[], preset?: 
   /* deprecated */ ['--browser <browser>', { description: `Browser to use for tests, one of "all", "chromium", "firefox" or "webkit" (default: "chromium")` }],
   ['-c, --config <file>', { description: `Configuration file, or a test directory with optional "playwright.config.{m,c}?{js,ts}"` }],
   ['--debug', { description: `Run tests with Playwright Inspector. Shortcut for "PWDEBUG=1" environment variable and "--timeout=0 --max-failures=1 --headed --workers=1" options` }],
+  ['--debug-healing', { description: `Enable debug mode for self-healing locators with detailed logging and UI inspection` }],
   ['--fail-on-flaky-tests', { description: `Fail if any test is flagged as flaky (default: false)` }],
   ['--forbid-only', { description: `Fail if test.only is called (default: false)` }],
   ['--fully-parallel', { description: `Run all tests in parallel (default: false)` }],
@@ -410,9 +426,11 @@ const testOptions: [string, { description: string, choices?: string[], preset?: 
   ['--trace <mode>', { description: `Force tracing mode`, choices: kTraceModes as string[] }],
   ['--tsconfig <path>', { description: `Path to a single tsconfig applicable to all imported files (default: look up tsconfig for each imported file separately)` }],
   ['--ui', { description: `Run tests in interactive UI mode` }],
+  ['--ui-healing', { description: `Enable interactive UI mode for approving self-healing locator suggestions` }],
   ['--ui-host <host>', { description: `Host to serve UI on; specifying this option opens UI in a browser tab` }],
   ['--ui-port <port>', { description: `Port to serve UI on, 0 for any free port; specifying this option opens UI in a browser tab` }],
   ['-u, --update-snapshots [mode]', { description: `Update snapshots with actual results. Running tests without the flag defaults to "missing"`, choices: ['all', 'changed', 'missing', 'none'], preset: 'changed' }],
+  ['--update-selectors', { description: `Automatically update test source code with healed selectors when healing is successful` }],
   ['--update-source-method <method>', { description: `Chooses the way source is updated (default: "patch")`, choices: ['overwrite', '3way', 'patch'] }],
   ['-j, --workers <workers>', { description: `Number of concurrent workers or percentage of logical CPU cores, use 1 to run in a single worker (default: 50%)` }],
   ['-x', { description: `Stop after the first failure` }],

@@ -22,6 +22,8 @@ import { ElementHandle, convertInputFiles, convertSelectOptionValues } from './e
 import { Events } from './events';
 import { JSHandle, assertMaxArguments, parseResult, serializeArgument } from './jsHandle';
 import { FrameLocator, Locator, testIdAttributeName } from './locator';
+import { SelfHealingLocator } from './selfHealingLocator';
+import { getHealingManager } from './healing';
 import * as network from './network';
 import { kLifecycleEvents } from './types';
 import { Waiter } from './waiter';
@@ -323,6 +325,13 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
   }
 
   locator(selector: string, options?: LocatorOptions): Locator {
+    const healingManager = getHealingManager();
+    const config = healingManager.getConfig();
+    
+    if (config.enabled) {
+      return new SelfHealingLocator(this, selector, options);
+    }
+    
     return new Locator(this, selector, options);
   }
 
