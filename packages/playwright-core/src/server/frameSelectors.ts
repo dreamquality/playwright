@@ -73,8 +73,8 @@ export class FrameSelectors {
         async () => await this._performQuery(selector, options, scope),
         {
           progress: progress as any,
-          testName: this.frame._page.mainFrame().url(),
-          lineNumber: undefined // TODO: Extract from stack trace if available
+          testName: this.extractTestNameFromStackTrace(),
+          lineNumber: this.extractLineNumberFromStackTrace()
         }
       );
     }
@@ -83,7 +83,49 @@ export class FrameSelectors {
     return await this._performQuery(selector, options, scope);
   }
 
-  private async _performQuery(selector: string, options?: types.StrictOptions & { mainWorld?: boolean }, scope?: ElementHandle): Promise<ElementHandle<Element> | null> {
+  private extractTestNameFromStackTrace(): string {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return 'unknown-test';
+      
+      // Look for test file patterns in the stack trace
+      const lines = stack.split('\n');
+      for (const line of lines) {
+        // Look for common test file patterns
+        const testFileMatch = line.match(/(?:at|@).*?([^\/\\]+\.(?:spec|test)\.(?:js|ts|jsx|tsx))(?::\d+)?/);
+        if (testFileMatch) {
+          return testFileMatch[1];
+        }
+      }
+      
+      // Fallback to the page URL if no test file found
+      return this.frame._page.mainFrame().url() || 'unknown-test';
+    } catch (error) {
+      return 'unknown-test';
+    }
+  }
+
+  private extractLineNumberFromStackTrace(): number | undefined {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return undefined;
+      
+      // Look for line numbers in test files
+      const lines = stack.split('\n');
+      for (const line of lines) {
+        const testFileMatch = line.match(/(?:at|@).*?[^\/\\]+\.(?:spec|test)\.(?:js|ts|jsx|tsx):(\d+)/);
+        if (testFileMatch) {
+          return parseInt(testFileMatch[1], 10);
+        }
+      }
+      
+      return undefined;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  async _performQuery(selector: string, options?: types.StrictOptions & { mainWorld?: boolean }, scope?: ElementHandle): Promise<ElementHandle<Element> | null> {
     const resolved = await this.resolveInjectedForSelector(selector, options, scope);
     // Be careful, |this.frame| can be different from |resolved.frame|.
     if (!resolved)
