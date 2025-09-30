@@ -24,6 +24,7 @@ export const Main: React.FC = ({}) => {
   const [paused, setPaused] = React.useState(false);
   const [log, setLog] = React.useState(new Map<string, CallLog>());
   const [mode, setMode] = React.useState<Mode>('none');
+  const [selfHealingSuggestions, setSelfHealingSuggestions] = React.useState<any>(null);
 
   React.useLayoutEffect(() => {
     window.playwrightSetMode = setMode;
@@ -37,6 +38,7 @@ export const Main: React.FC = ({}) => {
         : `Playwright Inspector`;
     };
     window.playwrightSetPaused = setPaused;
+    window.playwrightSetSelfHealingSuggestions = setSelfHealingSuggestions;
     window.playwrightUpdateLogs = callLogs => {
       setLog(log => {
         const newLog = new Map<string, CallLog>(log);
@@ -49,5 +51,11 @@ export const Main: React.FC = ({}) => {
     };
   }, []);
 
-  return <Recorder sources={sources} paused={paused} log={log} mode={mode} />;
+  return <Recorder 
+    sources={sources} 
+    paused={paused} 
+    log={log} 
+    mode={mode} 
+    selfHealingSuggestions={selfHealingSuggestions}
+  />;
 };

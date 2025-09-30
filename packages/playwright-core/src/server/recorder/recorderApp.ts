@@ -28,6 +28,7 @@ import { collapseActions, shouldMergeAction } from './recorderUtils';
 import { generateCode } from '../codegen/language';
 import { Recorder, RecorderEvent } from '../recorder';
 import { BrowserContext } from '../browserContext';
+import { CodeModifier } from '../selfHealing/codeModifier';
 
 import type { Page } from '../page';
 import type * as actions from '@recorder/actions';
@@ -122,7 +123,7 @@ export class RecorderApp {
     this._wireListeners(this._recorder);
   }
 
-  private _handleUIEvent(data: any) {
+  private async _handleUIEvent(data: any) {
     if (data.event === 'clear') {
       this._actions = [];
       this._updateActions('reveal');
@@ -164,6 +165,58 @@ export class RecorderApp {
         this._recorder.setHighlightedSelector(data.params.selector);
       if (data.params.ariaTemplate)
         this._recorder.setHighlightedAriaTemplate(data.params.ariaTemplate);
+      return;
+    }
+    if (data.event === 'selfHealingApproved') {
+      // Handle approval of a self-healing suggestion
+      const { originalLocator, healedLocator, testName, lineNumber } = data.params;
+      console.log('Self-healing approved:', data.params);
+      
+      // Apply the healing to the test code if we have the necessary information
+      if (testName && lineNumber) {
+        try {
+          const codeModifier = new CodeModifier();
+          const result = await codeModifier.applyHealingToCode({
+            testFilePath: testName, // This should be the full file path
+            lineNumber: lineNumber,
+            originalLocator: originalLocator,
+            healedLocator: healedLocator,
+            createBackup: true
+          });
+          
+          if (result.success) {
+            console.log(`[Self-Healing] Successfully updated test file: ${result.modifiedFilePath}`);
+            if (result.backupFilePath) {
+              console.log(`[Self-Healing] Backup created: ${result.backupFilePath}`);
+            }
+          } else {
+            console.warn(`[Self-Healing] Failed to update test file: ${result.error}`);
+          }
+        } catch (error) {
+          console.warn(`[Self-Healing] Error applying code modification:`, error);
+        }
+      }
+      
+      return;
+    }
+    if (data.event === 'selfHealingRejected') {
+      // Handle rejection of self-healing suggestions
+      console.log('Self-healing rejected:', data.params);
+      // The test will continue to fail, or the user can edit manually
+      return;
+    }
+    if (data.event === 'highlightRequested') {
+      // Handle element highlighting requests from self-healing panel
+      const selector = data.params.selector;
+      console.log('Self-healing highlight requested:', selector);
+      
+      // Use the existing recorder's highlight functionality
+      try {
+        await this._recorder.setHighlightedSelector(selector);
+        console.log(`[Self-Healing] Highlighted element: ${selector}`);
+      } catch (error) {
+        console.warn(`[Self-Healing] Failed to highlight element: ${selector}`, error);
+      }
       return;
     }
     throw new Error(`Unknown event: ${data.event}`);
@@ -303,6 +356,12 @@ export class RecorderApp {
     this._page.mainFrame().evaluateExpression(((paused: boolean) => {
       window.playwrightSetPaused(paused);
     }).toString(), { isFunction: true }, paused).catch(() => {});
+  }
+
+  setSelfHealingSuggestions(suggestions: any) {
+    this._page.mainFrame().evaluateExpression(((suggestions: any) => {
+      window.playwrightSetSelfHealingSuggestions(suggestions);
+    }).toString(), { isFunction: true }, suggestions).catch(() => {});
   }
 
   private _onUserSourcesChanged(sources: Source[], pausedSourceId: string | undefined) {

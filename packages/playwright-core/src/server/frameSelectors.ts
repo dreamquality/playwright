@@ -16,6 +16,7 @@
 
 import { asLocator } from '../utils';
 import { InvalidSelectorError,  splitSelectorByFrame, stringifySelector, visitAllSelectorParts } from '../utils/isomorphic/selectorParser';
+import { SelfHealingWrapper } from './selfHealing/selfHealingWrapper';
 
 import type { ElementHandle, FrameExecutionContext } from './dom';
 import type { Frame } from './frames';
@@ -39,9 +40,16 @@ export type SelectorInFrame = {
 
 export class FrameSelectors {
   readonly frame: Frame;
+  private _selfHealingWrapper?: SelfHealingWrapper;
 
   constructor(frame: Frame) {
     this.frame = frame;
+    // Initialize self-healing wrapper if available
+    try {
+      this._selfHealingWrapper = new SelfHealingWrapper(frame._page.browserContext);
+    } catch (e) {
+      // Self-healing is optional, continue without it
+    }
   }
 
   private _parseSelector(selector: string | ParsedSelector, options?: types.StrictOptions): SelectorInfo {
@@ -50,6 +58,74 @@ export class FrameSelectors {
   }
 
   async query(selector: string, options?: types.StrictOptions & { mainWorld?: boolean }, scope?: ElementHandle): Promise<ElementHandle<Element> | null> {
+    // If self-healing is enabled, wrap the query with healing logic
+    if (this._selfHealingWrapper?.isEnabled()) {
+      // Create a simple progress object
+      const progress = {
+        log: (message: string) => {
+          console.log(`[Self-Healing] ${message}`);
+        }
+      };
+      
+      return await this._selfHealingWrapper.wrapSelectorResolution(
+        this.frame,
+        selector,
+        async () => await this._performQuery(selector, options, scope),
+        {
+          progress: progress as any,
+          testName: this.extractTestNameFromStackTrace(),
+          lineNumber: this.extractLineNumberFromStackTrace()
+        }
+      );
+    }
+
+    // Fallback to direct query
+    return await this._performQuery(selector, options, scope);
+  }
+
+  private extractTestNameFromStackTrace(): string {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return 'unknown-test';
+      
+      // Look for test file patterns in the stack trace
+      const lines = stack.split('\n');
+      for (const line of lines) {
+        // Look for common test file patterns
+        const testFileMatch = line.match(/(?:at|@).*?([^\/\\]+\.(?:spec|test)\.(?:js|ts|jsx|tsx))(?::\d+)?/);
+        if (testFileMatch) {
+          return testFileMatch[1];
+        }
+      }
+      
+      // Fallback to the page URL if no test file found
+      return this.frame._page.mainFrame().url() || 'unknown-test';
+    } catch (error) {
+      return 'unknown-test';
+    }
+  }
+
+  private extractLineNumberFromStackTrace(): number | undefined {
+    try {
+      const stack = new Error().stack;
+      if (!stack) return undefined;
+      
+      // Look for line numbers in test files
+      const lines = stack.split('\n');
+      for (const line of lines) {
+        const testFileMatch = line.match(/(?:at|@).*?[^\/\\]+\.(?:spec|test)\.(?:js|ts|jsx|tsx):(\d+)/);
+        if (testFileMatch) {
+          return parseInt(testFileMatch[1], 10);
+        }
+      }
+      
+      return undefined;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  async _performQuery(selector: string, options?: types.StrictOptions & { mainWorld?: boolean }, scope?: ElementHandle): Promise<ElementHandle<Element> | null> {
     const resolved = await this.resolveInjectedForSelector(selector, options, scope);
     // Be careful, |this.frame| can be different from |resolved.frame|.
     if (!resolved)
