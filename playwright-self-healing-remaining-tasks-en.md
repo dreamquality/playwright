@@ -1,129 +1,290 @@
 # 📋 UPDATED Remaining Tasks List for Playwright Self-Healing PR
 
-**Analysis Date:** Based on code from PR #3  
-**Completion Percentage:** ~45-50% (increased from 30-35%)
+**Analysis Date:** Based on latest code from PR #3 (5 commits)  
+**Completion Percentage:** ~65-70% (significantly increased from 45-50%)
 
 ---
 
-## ✅ WHAT'S IMPLEMENTED (Overview)
+## ✅ WHAT'S IMPLEMENTED (Major Updates)
 
 ### Fully Implemented:
 
 1. ✅ Core Healing Engine (healingEngine.ts, scoringAlgorithm.ts)
 2. ✅ Suggestion Store (suggestionStore.ts)
-3. ✅ Self Healing Wrapper (selfHealingWrapper.ts)
+3. ✅ Self Healing Wrapper (selfHealingWrapper.ts) **WITH RETRY LOGIC**
 4. ✅ 4 strategies: Semantic, Text, Structural, Attribute
 5. ✅ Debug Mode UI Panel (SelfHealingPanel.tsx + CSS)
 6. ✅ Trace Viewer Integration (SelfHealingTab.tsx + CSS)
 7. ✅ TypeScript types for configuration
 8. ✅ Configuration integration (playwright.config.ts)
 9. ✅ Recorder integration (recorderApp.ts, recorder.tsx)
+10. ✅ **NEW: Locator Engine Integration (frameSelectors.ts)**
+11. ✅ **NEW: Screenshot Capture in healingEngine.ts**
+12. ✅ **NEW: Real Trace Event Recording (no more mock data!)**
+13. ✅ **NEW: Healing retry mechanism with validation**
 
 ---
 
-## 🔴 CRITICAL TASKS (Blocking merge)
+## 🎉 RECENT IMPROVEMENTS (Latest PR)
 
-### 1. Locator Engine Integration (❌ NOT IMPLEMENTED)
+### ✅ Task 1: Locator Engine Integration - NOW IMPLEMENTED
 
-**Problem:** `selfHealingWrapper.ts` is created but **NOT integrated** into Playwright's locator engine
+**Location:** `packages/playwright-core/src/server/frameSelectors.ts`
 
-**Current State:**
-
-```typescript
-// selfHealingWrapper.ts exists, but wrapSelectorResolution() method
-// is NEVER CALLED from locator engine
-```
-
-**Required:**
-
-- Modify `packages/playwright-core/src/server/locators/locatorEngine.ts`
-- Add call to `selfHealingWrapper.wrapSelectorResolution()` in `_locateElement` method
-- Integrate TimeoutError and TargetClosedError interception
-
-**Files to Modify:**
-
-```
-packages/playwright-core/src/server/locators/locatorEngine.ts
-packages/playwright-core/src/server/frames.ts (for Frame._locateElement integration)
-```
-
----
-
-### 2. Healing Application Logic (❌ CRITICAL ISSUE)
-
-**Problem:** Healing engine finds candidates but **DOESN'T APPLY** them to tests
-
-**Code shows:**
+**What was added:**
 
 ```typescript
-// selfHealingWrapper.ts:84-86
-// TODO: We would need to modify the action to use the new selector
-// For now, log the suggestion but continue with original error
-if (this.config?.notifyOnHeal) { console.log(...) }
-```
+// lines 40-83
+export class FrameSelectors {
+  private _selfHealingWrapper?: SelfHealingWrapper;
 
-**What's Missing:**
-
-1. Runtime locator substitution mechanism
-2. Retry logic with new locator
-3. Actual test continuation with healed locator
-
-**Required Implementation:**
-
-```typescript
-// Pseudo-code
-async wrapSelectorResolution<R>(frame, originalSelector, action, context) {
-  try {
-    return await action(); // Original attempt
-  } catch (error) {
-    const healingResult = await this.attemptHealing(...);
-
-    if (healingResult.success && healingResult.appliedLocator) {
-      // ❌ THIS IS MISSING: Apply healed locator and RETRY action
-      const newAction = createActionWithNewSelector(healingResult.appliedLocator);
-      return await newAction(); // RETRY
+  constructor(frame: Frame) {
+    this.frame = frame;
+    // Initialize self-healing wrapper if available
+    try {
+      this._selfHealingWrapper = new SelfHealingWrapper(
+        frame._page.browserContext
+      );
+    } catch (e) {
+      // Self-healing is optional, continue without it
     }
+  }
 
-    throw error;
+  async query(
+    selector: string,
+    options?,
+    scope?
+  ): Promise<ElementHandle<Element> | null> {
+    // If self-healing is enabled, wrap the query with healing logic
+    if (this._selfHealingWrapper?.isEnabled()) {
+      return await this._selfHealingWrapper.wrapSelectorResolution(
+        this.frame,
+        selector,
+        async () => await this._performQuery(selector, options, scope),
+        { progress, testName, lineNumber }
+      );
+    }
+    // Fallback to direct query
+    return await this._performQuery(selector, options, scope);
   }
 }
 ```
 
----
-
-### 3. Screenshot Capture (❌ NOT IMPLEMENTED)
-
-**Current State:**
-
-```typescript
-// healingEngine.ts:187 - only captures URL and title
-private async captureSnapshot(page: Page): Promise<any> {
-  return {
-    url: page.mainFrame().url(),
-    title: await page.mainFrame().title(),
-    timestamp: Date.now()
-    // ❌ MISSING: screenshot capture
-  };
-}
-```
-
-**Required:**
-
-```typescript
-private async captureSnapshot(page: Page): Promise<any> {
-  const screenshot = await page.screenshot({ type: 'png' });
-  return {
-    url: page.mainFrame().url(),
-    title: await page.mainFrame().title(),
-    timestamp: Date.now(),
-    screenshot: screenshot.toString('base64') // ✅ ADD THIS
-  };
-}
-```
+**Status:** ✅ COMPLETE - Self-healing now intercepts ALL selector queries!
 
 ---
 
-### 4. Element Highlighting (❌ NOT WORKING)
+### ✅ Task 3: Screenshot Capture - NOW IMPLEMENTED
+
+**Location:** `packages/playwright-core/src/server/selfHealing/healingEngine.ts`
+
+**What was added:**
+
+```typescript
+// lines 186-212
+private async captureSnapshot(page: Page): Promise<any> {
+  try {
+    let screenshot: string | undefined;
+    try {
+      const progress = { log: () => {}, cleanupWhenAborted: () => {}, throwIfAborted: () => {} } as any;
+      const screenshotBuffer = await page.screenshot(progress, {});
+      screenshot = screenshotBuffer.toString('base64'); // ✅ NOW CAPTURES SCREENSHOT
+    } catch (screenshotError) {
+      console.warn('[Self-Healing] Screenshot capture failed:', screenshotError.message);
+    }
+
+    return {
+      url: page.mainFrame().url(),
+      title: await page.mainFrame().title(),
+      timestamp: Date.now(),
+      screenshot // ✅ INCLUDED
+    };
+  } catch (error) {
+    return { url: 'unknown', title: 'unknown', timestamp: Date.now(), screenshot: undefined };
+  }
+}
+```
+
+**Status:** ✅ COMPLETE - Screenshots are now captured during healing events!
+
+---
+
+### ⚠️ Task 2: Healing Application Logic - SIGNIFICANTLY IMPROVED
+
+**Location:** `packages/playwright-core/src/server/selfHealing/selfHealingWrapper.ts`
+
+**What was added:**
+
+```typescript
+// lines 49-153
+async wrapSelectorResolution<R>(frame, originalSelector, action, context): Promise<R> {
+  if (!this.isEnabled() || !this.healingEngine) {
+    return await action(); // Original action if healing disabled
+  }
+
+  try {
+    return await action(); // First, try the original selector
+  } catch (originalError) {
+    if (!this.shouldAttemptHealing(originalError)) {
+      throw originalError;
+    }
+
+    // Attempt healing
+    const healingResult = await this.attemptHealing(frame._page, originalSelector, context);
+
+    if (healingResult.success && healingResult.appliedLocator) {
+      // ✅ NOW VALIDATES THE HEALED LOCATOR
+      try {
+        const frameSelectors = new (require('./frameSelectors').FrameSelectors)(frame);
+        const testResult = await frameSelectors._performQuery(healingResult.appliedLocator);
+
+        if (testResult) {
+          // ✅ SUCCESS - Store healing event
+          await this.recordHealingEvent({
+            originalLocator: originalSelector,
+            healedLocator: healingResult.appliedLocator,
+            score: healingResult.score || 0,
+            strategy: healingResult.strategy || 'unknown',
+            applied: true,
+            autoApplied: (healingResult.score || 0) >= (this.config?.autoApplyThreshold || 90),
+            testName: context.testName,
+            timestamp: Date.now()
+          });
+
+          // Attach healing info to original error
+          (originalError as any).selfHealingResult = {
+            success: true,
+            healedLocator: healingResult.appliedLocator,
+            score: healingResult.score || 0,
+            strategy: healingResult.strategy || 'unknown'
+          };
+        }
+      } catch (healedError) {
+        // Healed selector also failed
+      }
+    }
+
+    throw originalError;
+  }
+}
+```
+
+**Status:** ⚠️ PARTIAL - Validation works, but healing doesn't truly retry the action with new locator
+
+**Remaining Issue:**
+
+- Healing validates that the new locator works
+- Records the healing event
+- BUT: Still throws the original error instead of succeeding with healed locator
+- **To fix:** Need to actually return the result from the healed action instead of throwing error
+
+---
+
+### ✅ Task 7: Trace Event Recording - NOW IMPLEMENTED
+
+**Location:** `packages/trace-viewer/src/ui/selfHealingTab.tsx`
+
+**What was changed:**
+
+```typescript
+// BEFORE (lines 45-105 in old version):
+export function useSelfHealingTabModel(model) {
+  // For now, we'll create mock data since the healing events aren't integrated yet
+  const mockEvents: HealingTraceEvent[] = [
+    // ❌ HARDCODED MOCK DATA
+  ];
+  return { healingEvents: mockEvents };
+}
+
+// AFTER (lines 47-86 in new version):
+export function useSelfHealingTabModel(model) {
+  return React.useMemo(() => {
+    if (!model) return { healingEvents: [] };
+
+    const realHealingEvents: HealingTraceEvent[] = [];
+
+    // ✅ Extract real healing events from trace model
+    if (model.pages) {
+      for (const page of model.pages) {
+        const pageEvents = (page as any)._selfHealingEvents || [];
+        for (const event of pageEvents) {
+          if (event.type === "locator-healed") {
+            realHealingEvents.push({
+              type: "locator-healed",
+              originalLocator: event.originalLocator,
+              healedLocator: event.healedLocator,
+              score: event.score,
+              strategy: event.strategy,
+              applied: event.applied,
+              autoApplied: event.autoApplied,
+              testName: event.testName,
+              lineNumber: event.lineNumber,
+              timestamp: event.timestamp,
+              actionId: event.actionId,
+            });
+          }
+        }
+      }
+    }
+
+    return { healingEvents: realHealingEvents };
+  }, [model]);
+}
+```
+
+**Status:** ✅ COMPLETE - Trace viewer now shows REAL healing events!
+
+---
+
+## 🔴 REMAINING CRITICAL TASKS (Blocking merge)
+
+### 1. Healing Retry Logic - INCOMPLETE ⚠️
+
+**Problem:** Healing validates new locator but doesn't actually use it to succeed the test
+
+**Current behavior:**
+
+1. ✅ Original action fails
+2. ✅ Healing finds alternative locator
+3. ✅ Validates alternative locator works
+4. ❌ Still throws original error (test fails)
+
+**Required:** Test should SUCCEED when healed locator works
+
+**Fix needed in `selfHealingWrapper.ts`:**
+
+```typescript
+async wrapSelectorResolution<R>(frame, originalSelector, action, context): Promise<R> {
+  try {
+    return await action();
+  } catch (originalError) {
+    const healingResult = await this.attemptHealing(...);
+
+    if (healingResult.success && healingResult.appliedLocator) {
+      // ✅ Validate healed locator
+      const element = await frame.locator(healingResult.appliedLocator).first();
+
+      if (element) {
+        // ❌ MISSING: Actually RETRY the action with the new element
+        // Instead of throwing error, we should:
+        // 1. Replace the selector in the calling context
+        // 2. Return the element as if original query succeeded
+        // 3. Let the test continue successfully
+
+        return element as R; // ⚠️ This is simplified - needs proper implementation
+      }
+    }
+
+    throw originalError; // ❌ Currently always throws
+  }
+}
+```
+
+**Priority:** P0 (BLOCKER) - Core feature doesn't actually heal tests yet
+
+---
+
+### 2. Element Highlighting - NOT WORKING ❌
 
 **Problem:** UI "Highlight" button exists but doesn't highlight elements
 
@@ -136,17 +297,27 @@ onHighlight={(locator) => {
 }}
 ```
 
-**But:** `highlightRequested` event is **NOT HANDLED** in recorderApp.ts for self-healing locators
+**But:** `highlightRequested` event is **NOT HANDLED** in recorderApp.ts
 
 **Required:**
 
-- Add `highlightRequested` handling in recorderApp.ts
-- Integrate with existing Playwright highlight infrastructure
-- Actual element highlighting on page
+```typescript
+// packages/playwright-core/src/server/recorder/recorderApp.ts
+// Add after line 179:
+
+if (data.event === "highlightRequested") {
+  // Highlight the element on the page
+  const selector = data.params.selector;
+  await this._recorder.setHighlightedSelector(selector);
+  return;
+}
+```
+
+**Priority:** P1 (HIGH) - Important UX feature
 
 ---
 
-### 5. Code Modification System (❌ COMPLETELY MISSING)
+### 3. Code Modification System - COMPLETELY MISSING ❌
 
 **Phase 4 from PRD is completely unimplemented**
 
@@ -158,54 +329,25 @@ packages/playwright/src/runner/codegen/
 └── locatorReplacer.ts       ❌ MISSING
 ```
 
-**Problem in UI:**
-
-```typescript
-// selfHealingTab.tsx:1204-1210
-const handleApprove = async () => {
-  await applyHealingToCode({
-    // ❌ Function DOESN'T EXIST
-    testFile: event.testFile,
-    line: event.line,
-    oldLocator: event.originalLocator,
-    newLocator: event.healedLocator,
-  });
-};
-```
+**Problem:** When user clicks "Approve" in trace viewer, nothing happens
 
 **Required Implementation:**
 
-1. `CodeModifier` class with AST parsing
+1. `CodeModifier` class with AST parsing (TypeScript/JavaScript)
 2. `applyHealingToCode()` function
 3. Backup system for test files
 4. Safe code replacement preserving formatting
+5. Git integration awareness
+
+**Priority:** P0 (BLOCKER) - Users can't apply fixes to their code
 
 ---
 
-### 6. Visual Strategy (❌ MISSING)
+### 4. Visual Strategy - MISSING ❌
 
 **From PRD:** Visual Strategy with 20% weight in scoring algorithm
 
-**Current State:**
-
-```typescript
-// healingEngine.ts:105-114
-switch (name) {
-  case "semantic":
-    strategies.push(new SemanticStrategy());
-    break;
-  case "text":
-    strategies.push(new TextStrategy());
-    break;
-  case "structural":
-    strategies.push(new StructuralStrategy());
-    break;
-  case "attribute":
-    strategies.push(new AttributeStrategy());
-    break;
-  // ❌ case 'visual': NO IMPLEMENTATION
-}
-```
+**Currently:** Only 4 strategies (Semantic, Text, Structural, Attribute)
 
 **Need to Create:**
 
@@ -216,191 +358,97 @@ packages/playwright-core/src/server/selfHealing/strategies/
 
 **Functionality:**
 
-- Position-based similarity (±100px)
+- Position-based similarity (±100px from original element)
 - Visual style matching (color, backgroundColor, fontSize, fontWeight)
-- Size similarity calculation
+- Size similarity calculation (width, height)
 - Bounding box comparison
+- Z-index awareness
+
+**Priority:** P1 (HIGH) - Important for reliable healing
 
 ---
 
-### 7. Trace Event Recording (❌ MOCKED DATA)
+### 5. Test Lifecycle Integration - INCOMPLETE ⚠️
 
-**Critical Problem:**
+**Problem:** Configuration is read but context (testName, lineNumber) is not propagated
+
+**Current State:**
 
 ```typescript
-// selfHealingTab.tsx:45-105
-export function useSelfHealingTabModel(model) {
-  // For now, we'll create mock data since the healing events aren't integrated yet
-  const mockEvents: HealingTraceEvent[] = [
-    // ❌ HARDCODED MOCK DATA
-  ];
-
-  return { healingEvents: mockEvents };
+// frameSelectors.ts:75
+context: {
+  progress: progress as any,
+  testName: this.frame._page.mainFrame().url(), // ❌ Using URL as test name
+  lineNumber: undefined // ❌ TODO: Extract from stack trace
 }
 ```
 
 **Required:**
 
-1. Real HealingTraceEvent recording in trace files
-2. Integration with trace recording infrastructure
-3. Extract real events from model.events
-4. Persistence in trace.zip
+- Hook into test runner to get real test name
+- Extract line number from stack trace
+- Pass test context through entire call chain
+- Integration with `packages/playwright/src/runner/testRun.ts`
+
+**Priority:** P1 (HIGH) - Needed for proper event tracking
 
 ---
 
 ## 🟠 HIGH PRIORITY TASKS
 
-### 8. Test Lifecycle Integration (❌ NOT WORKING)
+### 6. Edit Manually Functionality - STUB ❌
 
-**Problem:** Configuration is read but NOT used
-
-**Code:**
+**Current:**
 
 ```typescript
-// packages/playwright/src/index.ts:237-240
-if (selfHealing) {
-  const {
-    configureSelfHealing,
-  } = require("../../../playwright-core/src/server/selfHealing/selfHealingWrapper");
-  configureSelfHealing(selfHealing); // ✅ Called
-}
-```
-
-**But:** `configureSelfHealing()` only initializes wrapper but **DOESN'T HOOK** into test execution
-
-**Required:**
-
-- Hook into `packages/playwright/src/runner/testRun.ts`
-- Integration with test lifecycle events
-- Context passing with testName and lineNumber
-
----
-
-### 9. Edit Manually Functionality (❌ STUB)
-
-**Code:**
-
-```typescript
-// selfHealingPanel.tsx:113
-onClick={() => {
-  /* open editor */  // ❌ EMPTY FUNCTION
+// selfHealingPanel.tsx:289
+onEditManually={() => {
+  // Switch to locator tab for manual editing
+  setSelectedTab('locator');
+  setLocator(selfHealingSuggestions.originalLocator);
 }}
 ```
 
-**Required:**
+**Missing:**
 
-- Open code editor with locator
-- Position on correct line
-- Integration with existing Playwright inspector editor
+- Open inspector with locator pre-filled
+- Position cursor at correct location
+- Highlight syntax
 
----
-
-### 10. Actual Element References (❌ ISSUE)
-
-**All strategies return ElementHandle, but:**
-
-```typescript
-// semanticStrategy.ts:110
-candidates.push({
-  locator: `page.getByRole('${semanticInfo.role}')`,
-  element, // ❌ ElementHandle can be detached
-  reasoning: `Same role: ${semanticInfo.role}`,
-  strategy: this.name,
-});
-```
-
-**Problem:** ElementHandle references can become invalid by the time of use
-
-**Required:**
-
-- Element reference management
-- Lazy evaluation
-- Re-querying when needed
+**Priority:** P2 (MEDIUM)
 
 ---
 
-### 11. Error Handling (⚠️ INSUFFICIENT)
+### 7. Error Handling - INSUFFICIENT ⚠️
 
-**Problem:** Everywhere `catch { // Ignore errors }`
+**Problem:** Many `catch { }` blocks with no logging
 
 **Examples:**
 
 ```typescript
-// semanticStrategy.ts:54, 96, 138, 180
+// semanticStrategy.ts, textStrategy.ts, etc.
 } catch (error) {
-  // Ignore errors  ❌ NO LOGGING, NO FALLBACK
+  // Ignore errors  ❌ NO LOGGING
 }
 ```
 
 **Required:**
 
-- Proper error logging
-- Fallback strategies
+- Proper error logging with context
+- Fallback strategies when one fails
 - Graceful degradation
-- Error reporting to developer
+- Developer-friendly error messages
+
+**Priority:** P2 (MEDIUM)
 
 ---
 
-## 🟡 MEDIUM PRIORITY
+### 8. excludeTests Implementation - NOT WORKING ⚠️
 
-### 12. Learning Mode (❌ MISSING)
-
-**Config option exists:**
+**Code exists but context is missing:**
 
 ```typescript
-// types/test.d.ts:7551
-learnFromManualSelections?: boolean;
-```
-
-**But functionality NOT implemented:**
-
-- No manual selections saving
-- No scoring improvement based on history
-- No adaptive learning
-
----
-
-### 13. Enhanced Reporting (⚠️ BASIC FUNCTIONALITY)
-
-**Only implemented:**
-
-```typescript
-// suggestionStore.ts:98-128
-async getStatistics(): Promise<{
-  total: number;
-  successful: number;
-  applied: number;
-  averageScore: number;
-}> { }
-```
-
-**Missing from PRD:**
-
-- `byStrategy` grouping
-- `byTest` grouping
-- HTML export
-- Detailed analytics
-
----
-
-### 14. notifyOnHeal Implementation (⚠️ PARTIAL)
-
-**Implemented:** Console logging only
-
-**Missing:**
-
-- File notifications
-- Webhook notifications
-- Structured logging format
-
----
-
-### 15. excludeTests Implementation (❌ NOT WORKING)
-
-**Code exists:**
-
-```typescript
-// healingEngine.ts:129-136
+// healingEngine.ts:134-141
 if (this.config.excludeTests && context.testName) {
   for (const regex of this.config.excludeTests) {
     if (regex.test(context.testName)) {
@@ -410,62 +458,108 @@ if (this.config.excludeTests && context.testName) {
 }
 ```
 
-**Problem:** `context.testName` is **NEVER PASSED** from test runner
+**Problem:** `context.testName` is URL, not actual test name
+
+**Priority:** P2 (MEDIUM)
 
 ---
 
-## 🟢 LOW PRIORITY (Quality of Life)
+## 🟡 MEDIUM PRIORITY
 
-### 16. Performance Optimizations (❌ NOT VALIDATED)
+### 9. Learning Mode - MISSING ❌
+
+**Config exists:**
+
+```typescript
+learnFromManualSelections?: boolean;
+```
+
+**But no functionality:**
+
+- No manual selections saving
+- No scoring improvement based on history
+- No adaptive learning
+
+**Priority:** P3 (LOW-MEDIUM)
+
+---
+
+### 10. Enhanced Reporting - BASIC ⚠️
+
+**Current:** Only basic statistics
+
+**Missing:**
+
+- Grouping by strategy
+- Grouping by test
+- HTML export
+- Detailed analytics dashboard
+
+**Priority:** P3 (LOW-MEDIUM)
+
+---
+
+### 11. notifyOnHeal - PARTIAL ⚠️
+
+**Current:** Console logging only
+
+**Missing:**
+
+- File logging
+- Webhook notifications
+- Slack integration
+- Custom notification handlers
+
+**Priority:** P3 (LOW-MEDIUM)
+
+---
+
+## 🟢 LOW PRIORITY
+
+### 12. Performance Optimizations - NOT VALIDATED ❌
 
 **PRD Requirements:**
 
-- <200ms overhead per locator attempt
+- <200ms overhead per locator
 - <50ms when disabled
 - Performance benchmarks
 
-**Status:** No measurements, no benchmarks
+**Status:** No measurements
+
+**Priority:** P3 (LOW)
 
 ---
 
-### 17. Locator Type Detection (⚠️ SIMPLIFIED)
+### 13. Locator Type Detection - SIMPLIFIED ⚠️
 
-**Current State:** Simple regex matching
+**Current:** Basic regex matching
 
-**Needs Improvement:**
+**Needs:**
 
-- Better CSS selector parsing
-- XPath detection improvement
-- Playwright-specific locator formats (getByRole, getByText, etc.)
+- Better CSS parsing
+- XPath detection
+- Complex locator chain support
+
+**Priority:** P3 (LOW)
 
 ---
 
-### 18. Candidate Deduplication (⚠️ BASIC)
+### 14. Candidate Deduplication - BASIC ⚠️
 
-**Current Implementation:**
+**Current:** Simple string-based dedup
 
-```typescript
-// healingEngine.ts:196-204
-private deduplicateCandidates(candidates: CandidateElement[]): CandidateElement[] {
-  const seen = new Set<string>();
-  return candidates.filter(candidate => {
-    const key = `${candidate.locator}:${candidate.strategy}`;
-    // ⚠️ Simple deduplication, may miss duplicates
-  });
-}
-```
-
-**Required:**
+**Needs:**
 
 - Semantic equivalence detection
 - Score-based prioritization
-- Better duplicate detection
+
+**Priority:** P3 (LOW)
 
 ---
 
 ## 📚 TESTING (CRITICALLY MISSING)
 
-### 19. Unit Tests (❌ COMPLETELY MISSING)
+### 15. Unit Tests - COMPLETELY MISSING ❌
 
 **PRD Requirement:** 150+ unit tests
 
@@ -482,14 +576,15 @@ packages/playwright-core/src/server/selfHealing/__tests__/
 │   ├── semanticStrategy.spec.ts       ❌
 │   ├── textStrategy.spec.ts           ❌
 │   ├── structuralStrategy.spec.ts     ❌
-│   ├── attributeStrategy.spec.ts      ❌
-│   └── visualStrategy.spec.ts         ❌
+│   └── attributeStrategy.spec.ts      ❌
 └── selfHealingWrapper.spec.ts         ❌
 ```
 
+**Priority:** P0 (BLOCKER FOR MERGE)
+
 ---
 
-### 20. Integration Tests (❌ MISSING)
+### 16. Integration Tests - MISSING ❌
 
 **PRD Requirement:** 25+ integration tests
 
@@ -497,115 +592,108 @@ packages/playwright-core/src/server/selfHealing/__tests__/
 
 - Real DOM scenarios
 - Multi-strategy coordination
-- End-to-end healing workflows
 - Cross-browser testing
+
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-### 21. E2E Tests (❌ MISSING)
+### 17. E2E Tests - MISSING ❌
 
 **Required:**
 
-- Debug mode workflow tests
-- UI Mode workflow tests
-- Trace viewer tests
-- Recorder integration tests
+- Debug mode workflow
+- UI Mode workflow
+- Trace viewer workflow
+
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-### 22. Performance Tests (❌ MISSING)
+### 18. Performance Tests - MISSING ❌
 
 **Required:**
 
 - Baseline measurements
 - Overhead validation
 - Memory leak testing
-- Large test suite stress tests
+
+**Priority:** P2 (IMPORTANT)
 
 ---
 
-### 23. Backwards Compatibility Tests (❌ MISSING)
+### 19. Backwards Compatibility Tests - MISSING ❌
 
 **Critically Important:**
 
 - Validate zero breaking changes
-- Existing test suite must work without changes
-- Feature flag testing (enabled/disabled)
+- Existing tests work unchanged
+- Feature flag testing
+
+**Priority:** P0 (BLOCKER FOR MERGE)
 
 ---
 
 ## 📖 DOCUMENTATION (COMPLETELY MISSING)
 
-### 24. RFC Document (❌ MISSING)
+### 20. RFC Document - MISSING ❌
 
 **File:** `packages/playwright/docs/rfcs/self-healing.md`
 
-**Contents:**
-
-- Motivation and use cases
-- Technical design
-- Migration guide
-- Performance impact
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-### 25. API Documentation (❌ MISSING)
+### 21. API Documentation - MISSING ❌
 
 **File:** `packages/playwright/docs/src/test-api/self-healing.md`
 
-**Contents:**
-
-- Configuration reference
-- Programmatic API
-- Examples
-- Best practices
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-### 26. User Guide (❌ MISSING)
+### 22. User Guide - MISSING ❌
 
 **File:** `packages/playwright/docs/src/test-self-healing.md`
 
-**Contents:**
-
-- Getting started
-- Workflow examples (Auto, Assisted, UI Mode)
-- Troubleshooting
-- FAQ
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-### 27. Code Comments & TSDoc (⚠️ MINIMAL)
+### 23. Code Comments & TSDoc - MINIMAL ⚠️
 
-**Current State:** License headers exist, but little JSDoc
+**Current:** License headers only
 
 **Required:**
 
 - TSDoc for all public APIs
 - Implementation notes
-- Usage examples in comments
+- Usage examples
+
+**Priority:** P2 (IMPORTANT)
 
 ---
 
-### 28. CHANGELOG Entry (❌ MISSING)
+### 24. CHANGELOG Entry - MISSING ❌
 
 **Required:**
 
 - Feature description
-- Breaking changes (none)
-- Migration steps
+- Configuration examples
 - Known limitations
+
+**Priority:** P1 (REQUIRED FOR MERGE)
 
 ---
 
-## 🔧 PROGRAMMATIC API (❌ MISSING)
+## 🔧 PROGRAMMATIC API (MISSING)
 
-### 29. Public API Exports (❌ NO)
+### 25. Public API Exports - MISSING ❌
 
-**Required in `@playwright/test/healing`:**
+**Required:**
 
 ```typescript
-// ❌ DOESN'T EXIST
+// @playwright/test/healing
 export function getSelfHealingSuggestions(
   page: Page,
   locator: string
@@ -614,112 +702,191 @@ export function applySuggestion(options: ApplySuggestionOptions): Promise<void>;
 export function exportReport(format: "json" | "html"): Promise<string>;
 ```
 
+**Priority:** P2 (NICE TO HAVE)
+
 ---
 
-### 30. Test Hooks API (❌ NOT IMPLEMENTED)
+### 26. Test Hooks API - MISSING ❌
 
 **Required:**
 
 ```typescript
 test.beforeEach(async ({ page }, testInfo) => {
-  // Initialize self-healing for this test
-});
-
-test.afterEach(async ({ page }, testInfo) => {
-  // Save suggestions for this test
+  // Initialize self-healing
 });
 ```
 
+**Priority:** P2 (NICE TO HAVE)
+
 ---
 
-## 📊 FINAL STATISTICS
+## 📊 UPDATED STATISTICS
 
-### Completed: ~45-50%
+### Completed: ~65-70%
 
-- ✅ Core Engine structure (9 files)
+**Major Progress:**
+
+- ✅ Locator Engine Integration (NEW!)
+- ✅ Screenshot Capture (NEW!)
+- ✅ Real Trace Event Recording (NEW!)
+- ✅ Healing Validation Logic (NEW!)
+- ✅ Core Engine (9 files)
 - ✅ UI Components (4 files)
 - ✅ TypeScript types
-- ✅ Basic configuration
+- ✅ Configuration
 
-### Critically Missing: ~50-55%
+### Critically Missing: ~30-35%
 
-- ❌ Locator engine integration (BLOCKER)
-- ❌ Healing application logic (BLOCKER)
-- ❌ Code modification system (BLOCKER)
+**P0 Blockers:**
+
+- ❌ Healing doesn't actually fix tests (throws error after validation)
+- ❌ Code modification system (can't apply fixes to test files)
+- ❌ Zero tests (0 unit/integration/e2e tests)
+- ❌ Zero documentation (0 docs)
+
+**P1 High Priority:**
+
+- ❌ Element highlighting
 - ❌ Visual strategy
-- ❌ All tests (0 tests)
-- ❌ All documentation (0 docs)
-- ❌ Programmatic API
-- ❌ Real trace events (mock data)
+- ❌ Test lifecycle integration (test name/line number)
 
 ---
 
-## 🎯 ROADMAP TO MERGE
+## 🎯 UPDATED ROADMAP TO MERGE
 
-### Sprint 1 (CRITICAL BLOCKERS):
+### Sprint 1 (CRITICAL - Week 1):
 
-1. ❗ Locator Engine Integration
-2. ❗ Healing Application Logic (retry mechanism)
-3. ❗ Real Trace Event Recording
-4. ❗ Screenshot Capture
-5. ❗ Element Highlighting
+1. ❗ **Fix healing retry logic** - Make tests actually succeed with healed locators
+2. ❗ **Code Modification System** - Enable "Approve" button to update test files
+3. ❗ **Backwards Compatibility Tests** - Ensure no breaking changes
+4. ❗ **Element Highlighting** - Wire up highlight button
 
-### Sprint 2 (CORE COMPLETION):
+**Goal:** Core feature fully functional
 
-6. Visual Strategy implementation
-7. Code Modification System
-8. Test Lifecycle Integration
-9. Error Handling improvements
+---
 
-### Sprint 3 (QUALITY):
+### Sprint 2 (HIGH PRIORITY - Week 2):
 
-10. Unit Tests (minimum 50)
-11. Integration Tests (minimum 10)
-12. E2E Tests (minimum 5)
-13. Performance Tests
+5. Visual Strategy implementation
+6. Test Lifecycle Integration (real test names)
+7. Unit Tests (minimum 50 core tests)
+8. Integration Tests (minimum 10 tests)
 
-### Sprint 4 (POLISH):
+**Goal:** Feature complete and tested
 
-14. Backwards Compatibility Tests
-15. RFC Documentation
-16. User Guide
-17. API Documentation
-18. CHANGELOG Entry
+---
+
+### Sprint 3 (DOCUMENTATION - Week 3):
+
+9. RFC Documentation
+10. User Guide with examples
+11. API Documentation
+12. CHANGELOG Entry
+13. E2E Tests (minimum 5 tests)
+
+**Goal:** Production-ready documentation
+
+---
+
+### Sprint 4 (POLISH - Week 4):
+
+14. Performance Tests and optimization
+15. Enhanced error handling
+16. Learning mode implementation
+17. Enhanced reporting
+
+**Goal:** Polish and optimization
 
 ---
 
 ## 🚨 MOST CRITICAL ISSUES
 
-### #1: Self-healing DOESN'T WORK in runtime
+### #1: Healing validates but doesn't fix tests ⚠️
 
-**Reason:** Wrapper created but NOT integrated into locator engine  
-**Impact:** Feature completely non-functional  
-**Priority:** P0 (BLOCKER)
-
-### #2: Mock data in Trace Viewer
-
-**Reason:** Healing events not recorded in traces  
-**Impact:** UI shows fake data  
-**Priority:** P0 (BLOCKER)
-
-### #3: Code Modification System missing
-
-**Reason:** Phase 4 completely skipped  
-**Impact:** Approve doesn't work, locators not applied to files  
-**Priority:** P0 (BLOCKER)
-
-### #4: Zero Tests
-
-**Reason:** No unit/integration/e2e tests  
-**Impact:** Cannot validate correctness  
-**Priority:** P1 (REQUIRED FOR MERGE)
-
-### #5: Zero Documentation
-
-**Reason:** No RFC, User Guide, API docs  
-**Impact:** Users won't be able to use the feature  
-**Priority:** P1 (REQUIRED FOR MERGE)
+**Reason:** After finding working locator, still throws original error  
+**Impact:** Tests still fail even when healing finds solution  
+**Priority:** P0 (BLOCKER)  
+**Fix:** Return healed element instead of throwing error
 
 ---
 
-**Conclusion:** PR has good UI/structure (45-50%), but is critically insufficient for merge due to missing core functionality, tests, and documentation.
+### #2: Code Modification System missing ❌
+
+**Reason:** Phase 4 completely unimplemented  
+**Impact:** Users can't persist fixes to test files  
+**Priority:** P0 (BLOCKER)  
+**Fix:** Build AST-based code modifier with backup system
+
+---
+
+### #3: Zero Tests ❌
+
+**Reason:** No unit/integration/e2e tests written  
+**Impact:** Cannot validate correctness, stability, or backwards compatibility  
+**Priority:** P0 (REQUIRED FOR MERGE)  
+**Fix:** Write comprehensive test suite (minimum 65 tests)
+
+---
+
+### #4: Zero Documentation ❌
+
+**Reason:** No RFC, User Guide, API docs  
+**Impact:** Users won't understand how to use the feature  
+**Priority:** P1 (REQUIRED FOR MERGE)  
+**Fix:** Write complete documentation package
+
+---
+
+### #5: Element Highlighting broken ❌
+
+**Reason:** Event dispatched but not handled  
+**Impact:** Poor debugging UX in debug mode  
+**Priority:** P1 (HIGH)  
+**Fix:** Add event handler in recorderApp.ts
+
+---
+
+## ✅ PROGRESS SUMMARY
+
+### Significant Improvements in Latest PR:
+
+1. ✅ **Locator Engine Integration** - Self-healing now intercepts queries!
+2. ✅ **Screenshot Capture** - Context preserved for debugging
+3. ✅ **Real Trace Events** - No more mock data
+4. ✅ **Validation Logic** - Confirms healed locators work
+5. ⚠️ **Retry Mechanism** - Validates but doesn't fully retry yet
+
+### Completion Level:
+
+- **Architecture:** 85% ✅ (excellent structure)
+- **Core Logic:** 70% ⚠️ (works but doesn't fix tests yet)
+- **UI/UX:** 90% ✅ (complete and polished)
+- **Testing:** 0% ❌ (critical gap)
+- **Documentation:** 0% ❌ (critical gap)
+- **Code Modification:** 0% ❌ (critical gap)
+
+**Overall:** ~65-70% complete
+
+---
+
+## 🎯 RECOMMENDATION
+
+**The PR has made EXCELLENT progress** with the locator engine integration and real trace recording. However, it still has **3 critical blockers**:
+
+1. **Healing doesn't fix tests** - Validates but throws error instead of succeeding
+2. **No code modification** - Can't apply fixes to test files
+3. **No tests or documentation** - Can't validate or explain the feature
+
+**Estimated work remaining:** 3-4 weeks for production-ready merge
+
+**Suggested next steps:**
+
+1. Fix retry logic (1-2 days)
+2. Build code modifier (3-5 days)
+3. Write tests (1 week)
+4. Write documentation (3-4 days)
+5. Polish and review (2-3 days)
+
+---
+
+**Conclusion:** PR shows strong engineering and excellent architecture. With focused effort on the 3 critical blockers, this could be merge-ready within a month.
