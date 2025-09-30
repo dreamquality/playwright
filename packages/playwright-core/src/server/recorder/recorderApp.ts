@@ -166,6 +166,19 @@ export class RecorderApp {
         this._recorder.setHighlightedAriaTemplate(data.params.ariaTemplate);
       return;
     }
+    if (data.event === 'selfHealingApproved') {
+      // Handle approval of a self-healing suggestion
+      // This could trigger the recorder to continue with the healed locator
+      console.log('Self-healing approved:', data.params);
+      // TODO: Integrate with actual test execution to apply the healed locator
+      return;
+    }
+    if (data.event === 'selfHealingRejected') {
+      // Handle rejection of self-healing suggestions
+      console.log('Self-healing rejected:', data.params);
+      // The test will continue to fail, or the user can edit manually
+      return;
+    }
     throw new Error(`Unknown event: ${data.event}`);
   }
 
@@ -303,6 +316,12 @@ export class RecorderApp {
     this._page.mainFrame().evaluateExpression(((paused: boolean) => {
       window.playwrightSetPaused(paused);
     }).toString(), { isFunction: true }, paused).catch(() => {});
+  }
+
+  setSelfHealingSuggestions(suggestions: any) {
+    this._page.mainFrame().evaluateExpression(((suggestions: any) => {
+      window.playwrightSetSelfHealingSuggestions(suggestions);
+    }).toString(), { isFunction: true }, suggestions).catch(() => {});
   }
 
   private _onUserSourcesChanged(sources: Source[], pausedSourceId: string | undefined) {

@@ -24,6 +24,7 @@ import { emptySource, SourceChooser } from '@web/components/sourceChooser';
 import { ToolbarButton, ToolbarSeparator } from '@web/components/toolbarButton';
 import * as React from 'react';
 import { CallLogView } from './callLog';
+import { SelfHealingPanel } from './selfHealingPanel';
 import './recorder.css';
 import { asLocator } from '@isomorphic/locatorGenerators';
 import { useDarkModeSetting } from '@web/theme';
@@ -37,6 +38,22 @@ export interface RecorderProps {
   paused: boolean,
   log: Map<string, CallLog>,
   mode: Mode,
+  selfHealingSuggestions?: {
+    originalLocator: string;
+    failureContext: {
+      testName?: string;
+      lineNumber?: number;
+      screenshot?: string;
+      timestamp: number;
+    };
+    candidates: Array<{
+      locator: string;
+      score: number;
+      reasoning: string;
+      strategy: string;
+      elementId?: string;
+    }>;
+  };
 }
 
 export const Recorder: React.FC<RecorderProps> = ({
@@ -44,6 +61,7 @@ export const Recorder: React.FC<RecorderProps> = ({
   paused,
   log,
   mode,
+  selfHealingSuggestions,
 }) => {
   const [selectedFileId, setSelectedFileId] = React.useState<string | undefined>();
   const [selectedTab, setSelectedTab] = useSetting<string>('recorderPropertiesTab', 'log');
@@ -84,6 +102,13 @@ export const Recorder: React.FC<RecorderProps> = ({
   React.useLayoutEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' });
   }, [messagesEndRef]);
+
+  // Auto-switch to self-healing tab when suggestions are available
+  React.useEffect(() => {
+    if (selfHealingSuggestions && selfHealingSuggestions.candidates.length > 0) {
+      setSelectedTab('self-healing');
+    }
+  }, [selfHealingSuggestions, setSelectedTab]);
 
 
   React.useLayoutEffect(() => {
@@ -238,6 +263,41 @@ export const Recorder: React.FC<RecorderProps> = ({
             title: 'Aria',
             render: () => <CodeMirrorWrapper text={ariaSnapshot || ''} placeholder='Type aria template to match' highlighter={'yaml'} onChange={onAriaEditorChange} highlight={ariaSnapshotErrors} wrapLines={true} />
           },
+          ...(selfHealingSuggestions ? [{
+            id: 'self-healing',
+            title: 'Self-Healing',
+            count: selfHealingSuggestions.candidates.length,
+            render: () => <SelfHealingPanel
+              originalLocator={selfHealingSuggestions.originalLocator}
+              failureContext={selfHealingSuggestions.failureContext}
+              candidates={selfHealingSuggestions.candidates}
+              onHighlight={(locator) => {
+                window.dispatch({ event: 'highlightRequested', params: { selector: locator } });
+              }}
+              onApprove={(candidate) => {
+                // Update the locator in the editor
+                setLocator(candidate.locator);
+                window.dispatch({ event: 'selfHealingApproved', params: { 
+                  originalLocator: selfHealingSuggestions.originalLocator,
+                  healedLocator: candidate.locator,
+                  score: candidate.score,
+                  strategy: candidate.strategy
+                }});
+                // Switch to locator tab to show the approved locator
+                setSelectedTab('locator');
+              }}
+              onRejectAll={() => {
+                window.dispatch({ event: 'selfHealingRejected', params: { 
+                  originalLocator: selfHealingSuggestions.originalLocator 
+                }});
+              }}
+              onEditManually={() => {
+                // Switch to locator tab for manual editing
+                setSelectedTab('locator');
+                setLocator(selfHealingSuggestions.originalLocator);
+              }}
+            />
+          }] : []),
         ]}
         selectedTab={selectedTab}
         setSelectedTab={setSelectedTab}

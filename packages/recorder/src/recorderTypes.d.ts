@@ -43,7 +43,9 @@ export type EventData = {
     | 'pause'
     | 'setMode'
     | 'highlightRequested'
-    | 'languageChanged';
+    | 'languageChanged'
+    | 'selfHealingApproved'
+    | 'selfHealingRejected';
   params: any;
 };
 
@@ -107,6 +109,7 @@ declare global {
     playwrightSetOverlayVisible: (visible: boolean) => void;
     playwrightUpdateLogs: (callLogs: CallLog[]) => void;
     playwrightElementPicked: (elementInfo: ElementInfo, userGesture?: boolean) => void;
+    playwrightSetSelfHealingSuggestions: (suggestions: any) => void;
     playwrightSourcesEchoForTest: Source[];
     dispatch(data: any): Promise<void>;
   }
