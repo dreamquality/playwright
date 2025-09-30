@@ -32,6 +32,7 @@ import { Timeline } from './timeline';
 import { MetadataView } from './metadataView';
 import { AttachmentsTab } from './attachmentsTab';
 import { AnnotationsTab } from './annotationsTab';
+import { SelfHealingTab, useSelfHealingTabModel } from './selfHealingTab';
 import type { Boundaries } from './geometry';
 import { InspectorTab } from './inspectorTab';
 import { ToolbarButton } from '@web/components/toolbarButton';
@@ -173,6 +174,7 @@ export const Workbench: React.FunctionComponent<{
   const consoleModel = useConsoleTabModel(model, selectedTime);
   const networkModel = useNetworkTabModel(model, selectedTime);
   const errorsModel = useErrorsTabModel(model);
+  const selfHealingModel = useSelfHealingTabModel(model);
 
   const sdkLanguage = model?.sdkLanguage || 'javascript';
 
@@ -252,6 +254,13 @@ export const Workbench: React.FunctionComponent<{
     render: () => <AttachmentsTab model={model} revealedAttachment={revealedAttachment} />
   };
 
+  const selfHealingTab: TabbedPaneTabModel = {
+    id: 'self-healing',
+    title: 'Self-Healing',
+    count: selfHealingModel.healingEvents.length,
+    render: () => <SelfHealingTab model={model} />
+  };
+
   const tabs: TabbedPaneTabModel[] = [
     inspectorTab,
     callTab,
@@ -261,6 +270,7 @@ export const Workbench: React.FunctionComponent<{
     networkTab,
     sourceTab,
     attachmentsTab,
+    selfHealingTab,
   ];
 
   if (annotations !== undefined) {

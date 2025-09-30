@@ -24,6 +24,19 @@ import type { ActionEntry, ContextEntry, PageEntry } from '../types/entries';
 import type { StackFrame } from '@protocol/channels';
 import type { ActionGroup } from '@isomorphic/protocolFormatter';
 
+// Self-healing event interface for trace integration
+export interface HealingTraceEvent {
+  type: 'locator-healed';
+  originalLocator: string;
+  healedLocator: string;
+  score: number;
+  strategy: string;
+  applied: boolean;
+  autoApplied?: boolean;
+  timestamp: number;
+  actionId?: string;
+}
+
 const contextSymbol = Symbol('context');
 const nextInContextSymbol = Symbol('nextInContext');
 const prevByEndTimeSymbol = Symbol('prevByEndTime');
